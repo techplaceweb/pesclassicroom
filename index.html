@@ -3,6 +3,65 @@
 
 /* Inspired by the mid-2000s football game menus; not an official asset */
 :root{--line:#7a91a8;--txt:#f1f5f9}button{border-radius:2px;background:linear-gradient(#41556a,#1b2a3b);border-color:#8498a9;text-transform:uppercase;letter-spacing:.35px}button:hover{background:linear-gradient(#587a9b,#294965)}.panel{background:linear-gradient(145deg,#293a4ddf,#0b1628f5);border-radius:3px;border-color:#8293a4;box-shadow:inset 0 1px #a8b4be55,0 14px 30px #0009}.item{border-radius:2px;border-left:4px solid #e2e8f0}.brand,.logo{font-style:italic;letter-spacing:-1px;text-shadow:2px 3px #000}.nav button.active{background:linear-gradient(90deg,#7c8b9a,#2b3f54);color:#fff}.emoji-pop{position:absolute;bottom:100%;right:0;max-height:190px;overflow-y:auto;width:min(300px,80vw);display:grid;grid-template-columns:repeat(7,1fr);background:#172b41;border:1px solid #9aafc2;padding:5px;z-index:20;box-shadow:0 8px 30px #000b}.emoji-pop button{padding:5px;font-size:19px;min-width:0}.emoji-wrap{position:relative}.attach-label{cursor:pointer;border:1px solid #8da4b8;background:#243a51;padding:10px 12px;display:inline-flex;align-items:center;justify-content:center;min-width:42px}.attach-label input{display:none}.attach-label:focus-within{outline:2px solid white}.tick{font-weight:900;color:#41ed7c;margin-left:6px;letter-spacing:-2px}.file-picked{font-size:11px;color:#aef2c5}.online-dot{color:#45f49b}.msg strong{font-weight:900}
+
+/* Mobile-first refinement: layout only; all chat/Supabase logic is unchanged. */
+html{min-width:0}body{overflow-x:hidden}#app,#content,main,.panel,.chatgrid{min-width:0}
+button,.attach-label{touch-action:manipulation}textarea{resize:vertical}
+@media(max-width:820px){
+  #app.app{display:flex;flex-direction:column;min-height:100dvh}
+  #app>aside{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 12px;align-items:center;padding:12px 14px;background:#101f32;border:0;border-bottom:2px solid #8b9aa9}
+  #app>aside .brand{font-size:clamp(17px,4.7vw,23px);margin:0;line-height:1.2;white-space:normal}
+  #app>aside .nav{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;order:3}
+  #app>aside .nav button{font-size:11px;line-height:1.2;min-width:0;min-height:42px;padding:8px 4px;letter-spacing:0;text-align:center;white-space:normal}
+  #app>aside #who{grid-column:1;order:4;min-width:0;margin:0;overflow-wrap:anywhere}
+  #app>aside #logout{grid-column:2;grid-row:1;min-height:40px;padding:8px 12px;font-size:11px}
+  #app main{width:100%;padding:12px 12px calc(90px + env(safe-area-inset-bottom));flex:1}
+  #app main header{margin-bottom:12px;gap:8px;align-items:center}
+  #app main header h1{font-size:clamp(18px,5.5vw,23px);line-height:1.2;overflow-wrap:anywhere}
+  #app main header .status{flex:none;font-size:10px;white-space:nowrap}
+  #content>.panel,#content .panel{padding:12px}
+  #content .row.between{gap:9px}
+  #content h2{font-size:16px;margin-bottom:10px}
+  #content .item{padding:12px;gap:10px;align-items:stretch}
+  #content .item>.actions{width:100%;display:flex;gap:7px}
+  #content .item>.actions button{flex:1;min-height:40px}
+  #content>.chatgrid{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+  #content .chatgrid>.panel{display:flex;flex-direction:column;min-width:0;order:1;padding:10px}
+  #content .chatgrid>.members{order:2;display:block;position:static;width:auto;padding:10px 12px;background:#12253a;border:1px solid #667d94}
+  #content .members h2{font-size:13px;margin:0 0 6px}
+  #content .members div{display:inline-block;margin:3px 12px 3px 0;font-size:12px}
+  #content .members .muted{margin:6px 0 0}
+  #content .messages{height:clamp(270px,46dvh,560px);min-height:0;overscroll-behavior:contain;padding:5px 7px}
+  #content .msg{padding:9px 5px;font-size:13px;line-height:1.5}
+  #content .msg small{font-size:10px}
+  #content .msg img{max-width:100%;height:auto}
+  #content .composer{display:grid;grid-template-columns:repeat(2,44px) minmax(0,1fr);gap:7px;align-items:stretch;margin-top:8px}
+  #content .composer textarea{grid-column:1/-1;grid-row:1;min-width:0;width:100%;min-height:66px;max-height:160px;padding:12px;font-size:16px;line-height:1.35}
+  #content .composer>.emoji-wrap{grid-column:1;grid-row:2;min-width:0}
+  #content .composer>.emoji-wrap>button{width:44px;height:44px;padding:5px}
+  #content .composer>.attach-label{grid-column:2;grid-row:2;width:44px;height:44px;padding:5px}
+  #content .composer>button:last-child{grid-column:3;grid-row:2;min-height:44px;width:100%;font-weight:bold}
+  #content .composer .emoji-pop{left:0;right:auto;bottom:calc(100% + 8px);width:min(310px,calc(100vw - 34px));grid-template-columns:repeat(7,minmax(0,1fr))}
+  #content .composer+*{max-width:100%}
+  #privateButton{max-width:calc(100vw - 24px);min-height:48px;box-shadow:0 6px 18px #0009;font-size:12px}
+  .floating{right:12px;bottom:calc(12px + env(safe-area-inset-bottom))}
+  #privatePanel.private{position:fixed;inset:auto 0 0 0;right:0;bottom:0;width:100%;max-width:none;height:min(82dvh,760px);max-height:calc(100dvh - 14px);border-radius:12px 12px 0 0;border-left:0;border-right:0;border-bottom:0;padding:12px 12px calc(12px + env(safe-area-inset-bottom));gap:8px;box-shadow:0 -15px 45px #000d}
+  #privatePanel .privatehistory{min-height:0;flex:1;overscroll-behavior:contain}
+  #privatePanel .composer{display:grid;grid-template-columns:44px minmax(0,1fr);gap:7px;align-items:stretch}
+  #privatePanel .composer textarea{grid-column:1/-1;grid-row:1;min-width:0;width:100%;min-height:62px;max-height:120px;font-size:16px;padding:11px}
+  #privatePanel .composer>.emoji-wrap{grid-column:1;grid-row:2}
+  #privatePanel .composer>.emoji-wrap>button{width:44px;min-height:44px}
+  #privatePanel .composer>button:last-child{grid-column:2;grid-row:2;min-height:44px}
+  #privatePanel .emoji-pop{left:0;right:auto;width:min(310px,calc(100vw - 34px))}
+  #overlay.overlay{padding:10px;align-items:center}
+  #overlay .dialog{width:100%;max-width:520px;max-height:calc(100dvh - 24px);overflow:auto;padding:14px}
+  #overlay .dialog input,#overlay .dialog select,#overlay .dialog textarea{font-size:16px}
+  #overlay .dialog .row{gap:8px}
+  .login{min-height:100dvh;padding:18px}.loginbox{max-width:420px}.loginbox .panel{padding:18px}.loginbox input{font-size:16px;min-height:48px}
+}
+@media(max-width:360px){#app>aside .nav button{font-size:10px}#app main{padding-left:8px;padding-right:8px}#content .messages{height:42dvh}#content .msg{font-size:12px}}
+@media(min-width:821px) and (max-width:1050px){.app{grid-template-columns:195px minmax(0,1fr)}main{padding:16px}.chatgrid{grid-template-columns:minmax(0,1fr) 155px;gap:10px}.panel{padding:14px}}
+
 </style></head><body>
 <div id="login" class="login"><div class="loginbox"><div class="logo">PES <span style="color:white">CLASSIC</span> ROOM<div class="sub" style="font-size:13px">MASTER LEAGUE EDITION</div></div><form id="loginForm" class="panel stack"><input id="username" placeholder="Username" autocomplete="username" required><input id="password" type="password" placeholder="Password" autocomplete="current-password" required><button class="gold">ACCEDI</button><div id="loginError" class="error"></div></form></div></div>
 <div id="maintenance" class="maintenance hidden">Il sito è temporaneamente inaccessibile</div>
