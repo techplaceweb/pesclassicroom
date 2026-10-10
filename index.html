@@ -63,7 +63,7 @@ button,.attach-label{touch-action:manipulation}textarea{resize:vertical}
 @media(min-width:821px) and (max-width:1050px){.app{grid-template-columns:195px minmax(0,1fr)}main{padding:16px}.chatgrid{grid-template-columns:minmax(0,1fr) 155px;gap:10px}.panel{padding:14px}}
 
 </style></head><body>
-<div id="login" class="login"><div class="loginbox"><div class="logo">PES <span style="color:white">CLASSIC</span> ROOM<div class="sub" style="font-size:13px">MASTER LEAGUE EDITION</div></div><form id="loginForm" class="panel stack"><input id="username" placeholder="Username" autocomplete="username" required><input id="password" type="password" placeholder="Password" autocomplete="current-password" required><button class="gold">ACCEDI</button><div id="loginError" class="error"></div></form></div></div>
+<div id="login" class="login"><div class="loginbox"><div class="logo">PES <span style="color:white">CLASSIC</span> ROOM<div class="sub" style="font-size:13px">MASTER LEAGUE EDITION</div></div><form id="loginForm" class="panel stack"><input id="username" placeholder="Username" autocomplete="username" required><input id="password" type="password" placeholder="Password" autocomplete="current-password" required><button type="submit" class="gold">ACCEDI</button><div id="loginError" class="error"></div></form></div></div>
 <div id="maintenance" class="maintenance hidden">Il sito è temporaneamente inaccessibile</div>
 <div id="app" class="app hidden"><aside><div class="brand">PES CLASSIC ROOM</div><nav class="nav"><button data-view="rooms" class="active">⚽ Chat Rooms</button><button data-view="users" class="adminOnly">👥 Utenti</button><button data-view="settings" class="adminOnly">⚙ Impostazioni</button></nav><p id="who" class="muted"></p><button id="logout">Esci</button></aside><main><header><h1 id="heading">Chat Rooms</h1><span class="status">● ONLINE</span></header><div id="content"></div></main><div class="floating"><button id="privateButton">✉ <span id="privateTitle">Contatta ADMIN</span> <span id="unread" class="badge hidden"></span></button></div></div>
 <div id="privatePanel" class="private hidden"></div><div id="overlay" class="overlay hidden"><div class="dialog panel"><div class="row between"><h2 id="dialogTitle"></h2><button id="closeDialog">✕</button></div><div id="dialogBody" class="stack"></div><div class="row" style="margin-top:14px"><button id="dialogSave" class="gold">Salva</button></div></div></div>
@@ -92,7 +92,32 @@ const request=async(q)=>{const {data,error}=await q;if(error)throw error;return 
 async function load(){profiles=await request(sb.from('profiles').select('id,username,role,archived,created_at'));rooms=await request(sb.from('rooms').select('*').order('created_at',{ascending:false}));access=await request(sb.from('room_access').select('*'));}
 async function enter(){const {data:{session}}=await sb.auth.getSession();if(!session){showLogin();return}me=session.user;const p=await request(sb.from('profiles').select('*').eq('id',me.id).single());profile=p;if(p.archived){await sb.auth.signOut();showLogin();return}const settings=await request(sb.from('settings').select('maintenance').single());if(settings.maintenance&&!isAdmin()){$('#login').classList.add('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden');return}$('#login').classList.add('hidden');$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.username+' · '+p.role.toUpperCase();$('#privateTitle').textContent=isAdmin()?'Contatta utenti':'Contatta ADMIN';document.querySelectorAll('.adminOnly').forEach(x=>x.classList.toggle('hidden',!isAdmin()));await load();await fetchUserEmails();subscribe();setupPresence();await loadPrivate();render();}
 function showLogin(){$('#login').classList.remove('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.add('hidden');me=null;profile=null;if(channel){sb.removeChannel(channel);channel=null}if(presenceChannel){sb.removeChannel(presenceChannel);presenceChannel=null}presence={}}
-$('#loginForm').onsubmit=async e=>{e.preventDefault();$('#loginError').textContent='';if(!configured){$('#loginError').textContent='Servizio momentaneamente non disponibile.';return}try{const name=$('#username').value.trim().toLowerCase();if(!/^[a-z0-9_.-]{3,32}$/.test(name))throw Error('Username non valido');await request(sb.auth.signInWithPassword({email:`${name}@pcr.invalid`,password:$('#password').value}));await enter()}catch(err){console.error('Accesso:',err);$('#loginError').textContent='Accesso non riuscito. Verifica le credenziali e riprova.'}};
+$('#loginForm').onsubmit=async e=>{
+  e.preventDefault();
+  const errorBox=$('#loginError'),submit=$('#loginForm button[type=submit],#loginForm button');
+  errorBox.textContent='';
+  if(!configured){errorBox.textContent='Servizio momentaneamente non disponibile.';return}
+  const name=$('#username').value.trim().toLowerCase();
+  if(!/^[a-z0-9_.-]{3,32}$/.test(name)){errorBox.textContent='Username non valido.';return}
+  submit.disabled=true;
+  try{
+    const {data,error}=await sb.auth.signInWithPassword({email:`${name}@pcr.invalid`,password:$('#password').value});
+    if(error){
+      console.error('Autenticazione Supabase:',{status:error.status,code:error.code,message:error.message});
+      errorBox.textContent=error.code==='invalid_credentials'||error.status===400
+        ?'Supabase non riconosce la password per questo account. Verifica le credenziali o reimposta la password in modo sicuro.'
+        :error.code==='email_not_confirmed'?'Account non confermato su Supabase.'
+        :'Autenticazione non riuscita ('+(error.code||error.status||'errore di rete')+').';
+      return;
+    }
+    if(!data?.session){errorBox.textContent='Supabase non ha restituito una sessione valida.';return}
+    try{await enter()}catch(err){
+      console.error('Caricamento dashboard:',err);
+      errorBox.textContent='Accesso riuscito, ma impossibile caricare la dashboard. Controlla la console del browser.';
+    }
+  }catch(err){console.error('Connessione login:',err);errorBox.textContent='Problema di connessione. Riprova tra poco.'}
+  finally{submit.disabled=false}
+};
 $('#logout').onclick=async()=>{closing=true;await sb.auth.signOut();showLogin();closing=false};
 function subscribe(){if(channel)sb.removeChannel(channel);channel=sb.channel('pcr-live-'+me.id).on('postgres_changes',{event:'*',schema:'public',table:'rooms'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'room_access'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'settings'},async()=>{const x=await request(sb.from('settings').select('*').single());if(x.maintenance&&!isAdmin()){$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden')}else{$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden')}}).on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(current)await renderChat(true)}).on('postgres_changes',{event:'*',schema:'public',table:'private_messages'},async()=>{await loadPrivate(true);if(privateOpen)renderPrivate()}).subscribe()}
 async function refresh(){try{await load();if(view==='users'&&isAdmin())await fetchUserEmails();if(current&&!rooms.some(r=>r.id===current.id&&canRoom(r)&&(!r.closed||isAdmin())))current=null;else if(current)current=rooms.find(r=>r.id===current.id);render()}catch(e){console.error(e)}}
