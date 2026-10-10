@@ -90,8 +90,51 @@ const EMOJIS='😀 😁 😂 🤣 😊 😎 😍 🥳 😘 😉 😜 🤔 😭 �
 const colorPalette=['#39a4ff','#4af67e','#bd72ff','#ffae39','#ffde42','#31e7de','#fa70c2','#a2ef47','#74a7ff','#efba64','#8dffbf','#c9a5ff'];
 function onlineIds(roomId){return [...new Set(Object.values(presence).flat().filter(x=>x.room===roomId).map(x=>x.user).filter(Boolean))].sort()}
 function userColor(id){if(profiles.find(p=>p.id===id)?.role==='admin')return '#ff5555';const ids=[...new Set(Object.values(presence).flat().map(x=>x.user).filter(x=>x&&profiles.find(p=>p.id===x)?.role!=='admin'))].sort();const n=ids.indexOf(id);if(n>=0)return (n<colorPalette.length?colorPalette[n]:`hsl(${(n*137+190)%360} 95% 65%)`);const i=profiles.filter(p=>p.role!=='admin').map(p=>p.id).sort().indexOf(id);return colorPalette[(i+colorPalette.length)%colorPalette.length]}
-function setupPresence(){if(presenceChannel)sb.removeChannel(presenceChannel);presenceChannel=sb.channel('pcr-presence-global',{config:{presence:{key:me.id}}});const update=()=>{presence=presenceChannel.presenceState();if(current){const el=document.querySelector('#onlineMembers');if(el)renderMemberList(el,current)}else if(view==='rooms')renderRooms()};presenceChannel.on('presence',{event:'sync'},update).on('presence',{event:'join'},update).on('presence',{event:'leave'},update).subscribe(async status=>{if(status==='SUBSCRIBED')await updatePresence()})}
-async function updatePresence(){if(presenceChannel&&me)try{await presenceChannel.track({user:me.id,room:current?.id||null,at:Date.now()})}catch(e){console.warn('Presenza:',e)}}
+// Realtime Presence: sync immediata, aggiornamento locale e recupero connessione.
+let presenceTimer=null,presenceReconnect=null,presenceGeneration=0,presenceRoomSent=undefined,presenceSnapshot='';
+function presenceChanged(){
+ const next=JSON.stringify(Object.keys(presence).sort().map(k=>[k,(presence[k]||[]).map(x=>x.user+'@'+(x.room||'')).sort()]));
+ if(next===presenceSnapshot)return;
+ presenceSnapshot=next;
+ if(current){const el=document.querySelector('#onlineMembers');if(el)renderMemberList(el,current)}
+ else if(view==='rooms')renderRooms();
+}
+function setupPresence(){
+ if(!me)return;
+ const generation=++presenceGeneration;
+ if(presenceReconnect){clearTimeout(presenceReconnect);presenceReconnect=null}
+ if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null}
+ if(presenceChannel){const old=presenceChannel;presenceChannel=null;sb.removeChannel(old)}
+ presenceRoomSent=undefined;
+ const ch=sb.channel('pcr-presence-global',{config:{presence:{key:me.id}}});
+ presenceChannel=ch;
+ const sync=()=>{if(generation!==presenceGeneration||ch!==presenceChannel)return;presence=ch.presenceState();presenceChanged()};
+ ch.on('presence',{event:'sync'},sync).on('presence',{event:'join'},sync).on('presence',{event:'leave'},sync)
+ .subscribe(status=>{
+  if(generation!==presenceGeneration||ch!==presenceChannel)return;
+  if(status==='SUBSCRIBED'){
+   presenceRoomSent=undefined;
+   sync();updatePresence(true);
+   presenceTimer=setInterval(()=>{if(document.visibilityState==='visible')updatePresence(true)},20000);
+  }else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+   if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null}
+   if(!presenceReconnect)presenceReconnect=setTimeout(()=>{presenceReconnect=null;if(me&&generation===presenceGeneration)setupPresence()},1800);
+  }
+ });
+}
+async function updatePresence(force=false){
+ if(!presenceChannel||!me||presenceChannel.state!=='joined')return;
+ const room=current?.id||null;
+ if(!force&&presenceRoomSent===room)return;
+ presenceRoomSent=room;
+ // Mostra subito il proprio nome, senza attendere il round-trip di rete.
+ const local={user:me.id,room,at:Date.now()};
+ presence={...presence,[me.id]:[local]};presenceChanged();
+ try{const result=await presenceChannel.track(local);if(result!=='ok')throw Error('Presence track non riuscito')}
+ catch(e){presenceRoomSent=undefined;console.warn('Presenza:',e)}
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&me){if(!presenceChannel||presenceChannel.state!=='joined')setupPresence();else updatePresence(true)}});
+window.addEventListener('online',()=>{if(me){if(!presenceChannel||presenceChannel.state!=='joined')setupPresence();else updatePresence(true)}});
 function renderMemberList(el,room){el.replaceChildren(node('h2','Online nella stanza'));const ids=onlineIds(room.id);ids.forEach(id=>{const x=node('div','● '+username(id));x.style.color=userColor(id);el.append(x)});el.append(node('p',`Utenti online: ${ids.length}`,'muted'));if(!ids.length)el.append(node('p','In attesa della sincronizzazione delle presenze…','muted'))}
 function activateAudio(){try{const A=window.AudioContext||window.webkitAudioContext;if(!A)return;if(!audioCtx)audioCtx=new A();if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{})}catch(e){console.warn('Audio:',e)}}
 document.addEventListener('pointerdown',activateAudio,{passive:true});document.addEventListener('keydown',activateAudio);
@@ -100,7 +143,7 @@ function attachPicker(onFile){const label=node('label','','attach-label'),inputE
 const request=async(q)=>{const {data,error}=await q;if(error)throw error;return data};
 async function load(){profiles=await request(sb.from('profiles').select('id,username,role,archived,created_at'));rooms=await request(sb.from('rooms').select('*').order('created_at',{ascending:false}));access=await request(sb.from('room_access').select('*'));}
 async function enter(){const {data:{session}}=await sb.auth.getSession();if(!session){showLogin();return}me=session.user;const p=await request(sb.from('profiles').select('*').eq('id',me.id).single());profile=p;if(p.archived){await sb.auth.signOut();showLogin();return}const settings=await request(sb.from('settings').select('maintenance').single());if(settings.maintenance&&!isAdmin()){$('#login').classList.add('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden');return}$('#login').classList.add('hidden');$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.username+' · '+p.role.toUpperCase();$('#privateTitle').textContent=isAdmin()?'Contatta utenti':'Contatta ADMIN';document.querySelectorAll('.adminOnly').forEach(x=>x.classList.toggle('hidden',!isAdmin()));await load();await fetchUserEmails();subscribe();setupPresence();await loadPrivate();render();}
-function showLogin(){$('#login').classList.remove('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.add('hidden');me=null;profile=null;if(channel){sb.removeChannel(channel);channel=null}if(presenceChannel){sb.removeChannel(presenceChannel);presenceChannel=null}presence={}}
+function showLogin(){$('#login').classList.remove('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.add('hidden');me=null;profile=null;if(channel){sb.removeChannel(channel);channel=null}if(presenceReconnect){clearTimeout(presenceReconnect);presenceReconnect=null}if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null}presenceGeneration++;if(presenceChannel){sb.removeChannel(presenceChannel);presenceChannel=null}presence={};presenceSnapshot='';presenceRoomSent=undefined}
 $('#loginForm').onsubmit=async e=>{
   e.preventDefault();
   const errorBox=$('#loginError'),submit=$('#loginForm button[type=submit],#loginForm button');
