@@ -71,12 +71,12 @@ button,.attach-label{touch-action:manipulation}textarea{resize:vertical}
 .msg.is-pinned{border-left:3px solid #ffc85a;background:#273344}.attachment-ready{background:#b51e2b!important;border:2px solid #ff8c91!important;color:white!important;box-shadow:0 0 14px #ff293b9c!important;font-weight:900;animation:attach-pulse 1.4s ease-in-out infinite}.attachment-cancel{background:#353d49!important;border-color:#a7b0bd!important}.attachment-notice{font-size:12px;color:#ffb8b8;overflow-wrap:anywhere;grid-column:1/-1}.attachment-file{color:#b9d7ff;text-decoration:underline;overflow-wrap:anywhere}
 @keyframes attach-pulse{50%{box-shadow:0 0 23px #ff293bcc}}
 @media(prefers-reduced-motion:reduce){.attachment-ready{animation:none}}
- .room-full-box{text-align:center;max-width:470px}.room-full-box h2{color:#ffbd72;font-size:23px}.room-full-box p{line-height:1.65;font-size:15px}.room-capacity{color:#ffcf80;font-weight:bold}.room-capacity.is-full{color:#ff9090} .chat-link{color:#8ed2ff;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}.chat-link:hover{color:#ffe39b}
+ .room-full-box{text-align:center;max-width:470px}.room-full-box h2{color:#ffbd72;font-size:23px}.room-full-box p{line-height:1.65;font-size:15px}.room-capacity{color:#ffcf80;font-weight:bold}.room-capacity.is-full{color:#ff9090} .honor-leader{color:#52ff95!important;text-shadow:0 0 12px #32f58c99}.honor-rank{font-size:19px;font-weight:900;min-width:35px}.honor-list .item{align-items:center}.honor-wins{line-height:1.6}.honor-notice{z-index:25}.chat-link{color:#8ed2ff;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}.chat-link:hover{color:#ffe39b}
 </style></head><body>
 <div id="login" class="login"><div class="loginbox"><div class="logo">PES <span style="color:white">CLASSIC</span> ROOM<div class="sub" style="font-size:13px">MASTER LEAGUE EDITION</div></div><form id="loginForm" class="panel stack"><input id="username" placeholder="Username" autocomplete="username" required><input id="password" type="password" placeholder="Password" autocomplete="current-password" required><button type="submit" class="gold">ACCEDI</button><div id="loginError" class="error"></div></form></div></div>
 <div id="maintenance" class="maintenance hidden">Il sito è temporaneamente inaccessibile</div>
-<div id="app" class="app hidden"><aside><div class="brand">PES CLASSIC ROOM</div><nav class="nav"><button data-view="rooms" class="active">⚽ Chat Rooms</button><button data-view="users" class="adminOnly">👥 Utenti</button><button data-view="settings" class="adminOnly">⚙ Impostazioni</button></nav><p id="who" class="muted"></p><button id="logout">Esci</button></aside><main><header><h1 id="heading">Chat Rooms</h1><span class="status">● ONLINE</span></header><div id="content"></div></main><div class="floating"><button id="privateButton">✉ <span id="privateTitle">Contatta ADMIN</span> <span id="unread" class="badge hidden"></span></button></div></div>
-<div id="privatePanel" class="private hidden"></div><div id="roomFullOverlay" class="overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="roomFullTitle"><div class="dialog panel room-full-box"><h2 id="roomFullTitle">⚠️ ROOM COMPLETA</h2><p>Non ci sono più posti disponibili per questa room. Attendi al prossimo torneo. Se si liberà un posto, verrà comunicato sul gruppo telegram.</p><button id="roomFullClose" class="gold">HO CAPITO</button></div></div><div id="overlay" class="overlay hidden"><div class="dialog panel"><div class="row between"><h2 id="dialogTitle"></h2><button id="closeDialog">✕</button></div><div id="dialogBody" class="stack"></div><div class="row" style="margin-top:14px"><button id="dialogSave" class="gold">Salva</button></div></div></div>
+<div id="app" class="app hidden"><aside><div class="brand">PES CLASSIC ROOM</div><nav class="nav"><button data-view="rooms" class="active">⚽ Chat Rooms</button><button data-view="honors">🏆 Albo d’oro</button><button data-view="users" class="adminOnly">👥 Utenti</button><button data-view="settings" class="adminOnly">⚙ Impostazioni</button></nav><p id="who" class="muted"></p><button id="logout">Esci</button></aside><main><header><h1 id="heading">Chat Rooms</h1><span class="status">● ONLINE</span></header><div id="content"></div></main><div class="floating"><button id="privateButton">✉ <span id="privateTitle">Contatta ADMIN</span> <span id="unread" class="badge hidden"></span></button></div></div>
+<div id="privatePanel" class="private hidden"></div><div id="honorOverlay" class="overlay honor-notice hidden" role="alertdialog" aria-modal="true"><div class="dialog panel" style="text-align:center"><h2 id="honorNoticeText"></h2><div class="row" style="justify-content:center;margin-top:18px"><button id="honorView" class="gold">🏆 Vedi Albo</button><button id="honorDismiss">Ok</button></div></div></div><div id="roomFullOverlay" class="overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="roomFullTitle"><div class="dialog panel room-full-box"><h2 id="roomFullTitle">⚠️ ROOM COMPLETA</h2><p>Non ci sono più posti disponibili per questa room. Attendi al prossimo torneo. Se si liberà un posto, verrà comunicato sul gruppo telegram.</p><button id="roomFullClose" class="gold">HO CAPITO</button></div></div><div id="overlay" class="overlay hidden"><div class="dialog panel"><div class="row between"><h2 id="dialogTitle"></h2><button id="closeDialog">✕</button></div><div id="dialogBody" class="stack"></div><div class="row" style="margin-top:14px"><button id="dialogSave" class="gold">Salva</button></div></div></div>
 <script type="module">
 import {createClient} from 'https://esm.sh/@supabase/supabase-js@2';
 // Paste only the public Project URL and publishable/anon key from Supabase. NEVER service_role.
@@ -86,6 +86,7 @@ const configured=SUPABASE_URL.startsWith('https://')&&!SUPABASE_KEY.startsWith('
 const sb=configured?createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}}):null;
 const $=s=>document.querySelector(s),node=(tag,text='',className='')=>{const x=document.createElement(tag);x.textContent=text;x.className=className;return x};const add=(p,...children)=>p.append(...children);const button=(text,action,cls='')=>{const b=node('button',text,cls);b.onclick=action;return b};const fmt=d=>new Date(d).toLocaleString('it-IT');const fail=e=>{console.error(e);alert('Operazione non riuscita: '+(e?.message||String(e)))};
 let roomSeatTimer=null,roomEntering=false,roomSeatId=null;
+let honors=[],honorEvents=[],honorLastEvent=0,honorInitialized=false,honorPoll=null,honorBusy=false;
 let userEmails={},me=null,profile=null,rooms=[],profiles=[],access=[],current=null,view='rooms',channel=null,privateOpen=false,peer=null,mute=false,privateData=[],seen=new Set(),lastPublic=new Set(),lastPrivate=new Set(),ready=false,files=null,closing=false,presenceChannel=null,presence={},audioCtx=null;
 const isAdmin=()=>profile?.role==='admin';const username=id=>profiles.find(p=>p.id===id)?.username||'Utente';const canRoom=r=>isAdmin()||access.some(a=>a.room_id===r.id&&a.user_id===me.id);
 const EMOJIS='😀 😁 😂 🤣 😊 😎 😍 🥳 😘 😉 😜 🤔 😭 😢 😡 🤯 🤩 🙌 👏 👍 👎 💪 🤝 ❤️ 💚 💙 💜 🔥 ⭐ ⚽ 🥅 🏆 🥇 🎮 🎯 🚀 💯 🎉 🍕 ☕ 🌟 😴 😱 🤗 🙏 😇 🫶 👀 😈 🤖 💥 🎵 🏟️ 🇮🇹'.split(' ');
@@ -200,8 +201,8 @@ function linkedText(value){
 }
 const request=async(q)=>{const {data,error}=await q;if(error)throw error;return data};
 async function load(){profiles=await request(sb.from('profiles').select('id,username,role,archived,created_at'));rooms=await request(sb.from('rooms').select('*').order('created_at',{ascending:false}));access=await request(sb.from('room_access').select('*'));}
-async function enter(){const {data:{session}}=await sb.auth.getSession();if(!session){showLogin();return}me=session.user;const p=await request(sb.from('profiles').select('*').eq('id',me.id).single());profile=p;if(p.archived){await sb.auth.signOut();showLogin();return}const settings=await request(sb.from('settings').select('maintenance').single());if(settings.maintenance&&!isAdmin()){$('#login').classList.add('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden');return}$('#login').classList.add('hidden');$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.username+' · '+p.role.toUpperCase();$('#privateTitle').textContent=isAdmin()?'Contatta utenti':'Contatta ADMIN';document.querySelectorAll('.adminOnly').forEach(x=>x.classList.toggle('hidden',!isAdmin()));await load();await fetchUserEmails();subscribe();setupPresence();await loadPrivate();render();}
-function showLogin(){releaseRoomSeat();$('#login').classList.remove('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.add('hidden');me=null;profile=null;if(channel){sb.removeChannel(channel);channel=null}if(presenceReconnect){clearTimeout(presenceReconnect);presenceReconnect=null}if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null}presenceGeneration++;if(presenceChannel){sb.removeChannel(presenceChannel);presenceChannel=null}presence={};presenceSnapshot='';presenceRoomSent=undefined}
+async function enter(){const {data:{session}}=await sb.auth.getSession();if(!session){showLogin();return}me=session.user;const p=await request(sb.from('profiles').select('*').eq('id',me.id).single());profile=p;if(p.archived){await sb.auth.signOut();showLogin();return}const settings=await request(sb.from('settings').select('maintenance').single());if(settings.maintenance&&!isAdmin()){$('#login').classList.add('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden');return}$('#login').classList.add('hidden');$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.username+' · '+p.role.toUpperCase();$('#privateTitle').textContent=isAdmin()?'Contatta utenti':'Contatta ADMIN';document.querySelectorAll('.adminOnly').forEach(x=>x.classList.toggle('hidden',!isAdmin()));await load();await loadHonors(true);await fetchUserEmails();subscribe();setupPresence();await loadPrivate();render();}
+function showLogin(){releaseRoomSeat();$('#login').classList.remove('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.add('hidden');me=null;profile=null;if(channel){sb.removeChannel(channel);channel=null}if(presenceReconnect){clearTimeout(presenceReconnect);presenceReconnect=null}if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null}presenceGeneration++;if(presenceChannel){sb.removeChannel(presenceChannel);presenceChannel=null}presence={};presenceSnapshot='';presenceRoomSent=undefined;honorInitialized=false;honorLastEvent=0;honors=[];honorEvents=[];if(honorPoll){clearInterval(honorPoll);honorPoll=null}$('#honorOverlay').classList.add('hidden')}
 $('#loginForm').onsubmit=async e=>{
   e.preventDefault();
   const errorBox=$('#loginError'),submit=$('#loginForm button[type=submit],#loginForm button');
@@ -229,10 +230,10 @@ $('#loginForm').onsubmit=async e=>{
   finally{submit.disabled=false}
 };
 $('#logout').onclick=async()=>{await releaseRoomSeat();closing=true;await sb.auth.signOut();showLogin();closing=false};
-function subscribe(){if(channel)sb.removeChannel(channel);channel=sb.channel('pcr-live-'+me.id).on('postgres_changes',{event:'*',schema:'public',table:'rooms'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'room_access'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'settings'},async()=>{const x=await request(sb.from('settings').select('*').single());if(x.maintenance&&!isAdmin()){$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden')}else{$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden')}}).on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(current)await renderChat(true)}).on('postgres_changes',{event:'*',schema:'public',table:'private_messages'},async()=>{await loadPrivate(true);if(privateOpen)renderPrivate()}).subscribe()}
+function subscribe(){if(channel)sb.removeChannel(channel);channel=sb.channel('pcr-live-'+me.id).on('postgres_changes',{event:'*',schema:'public',table:'rooms'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'room_access'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'settings'},async()=>{const x=await request(sb.from('settings').select('*').single());if(x.maintenance&&!isAdmin()){$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden')}else{$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden')}}).on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(current)await renderChat(true)}).on('postgres_changes',{event:'INSERT',schema:'public',table:'honor_events'},()=>loadHonors()).on('postgres_changes',{event:'*',schema:'public',table:'honor_entries'},()=>loadHonors()).on('postgres_changes',{event:'*',schema:'public',table:'private_messages'},async()=>{await loadPrivate(true);if(privateOpen)renderPrivate()}).subscribe();if(honorPoll)clearInterval(honorPoll);honorPoll=setInterval(()=>{if(me&&document.visibilityState==='visible')loadHonors()},12000)}
 async function refresh(){try{await load();if(view==='users'&&isAdmin())await fetchUserEmails();if(current&&!rooms.some(r=>r.id===current.id&&canRoom(r)&&(!r.closed||isAdmin()))){await releaseRoomSeat();current=null}else if(current)current=rooms.find(r=>r.id===current.id);render()}catch(e){console.error(e)}}
-function render(){updatePresence();document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('#heading').textContent=current?.name||(view==='rooms'?'Chat Rooms':view==='users'?'Utenti':'Impostazioni');if(current)renderChat();else if(view==='rooms')renderRooms();else if(view==='users')renderUsers();else renderSettings()}
-document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{if(!isAdmin()&&b.dataset.view!=='rooms')return;view=b.dataset.view;releaseRoomSeat();current=null;render()});
+function render(){updatePresence();document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('#heading').textContent=current?.name||(view==='rooms'?'Chat Rooms':view==='users'?'Utenti':view==='honors'?'Albo d’oro':'Impostazioni');if(current)renderChat();else if(view==='rooms')renderRooms();else if(view==='users')renderUsers();else if(view==='honors')renderHonors();else renderSettings()}
+document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{if(!isAdmin()&&!['rooms','honors'].includes(b.dataset.view))return;view=b.dataset.view;releaseRoomSeat();current=null;render()});
 function dialog(title,setup,submit,label='Salva'){const body=$('#dialogBody');body.replaceChildren();$('#dialogTitle').textContent=title;setup(body);$('#dialogSave').textContent=label;$('#dialogSave').onclick=async()=>{try{await submit();$('#overlay').classList.add('hidden');await refresh()}catch(e){fail(e)}};$('#overlay').classList.remove('hidden')}
 $('#closeDialog').onclick=()=>$('#overlay').classList.add('hidden');
 function input(p,label,value='',type='text'){const x=node('input');x.placeholder=label;x.setAttribute('aria-label',label);x.type=type;x.value=value;p.append(x);return x}
@@ -247,6 +248,99 @@ async function manage(body){
   if(data?.error)throw Error(data.error);return data;
 }
 async function fetchUserEmails(){if(!isAdmin())return;try{const data=await manage({action:'list'});userEmails=Object.fromEntries((data.users||[]).map(x=>[x.id,x.email||'']))}catch(e){console.warn('Email utenti:',e)}}
+// Albo d'oro: registro eventi server-side, graduatoria per numero di vittorie.
+async function loadHonors(initial=false){
+ if(!me||honorBusy)return;honorBusy=true;
+ try{
+  const [entries,events]=await Promise.all([
+   request(sb.from('honor_entries').select('id,user_id,trophy_name,created_at').order('created_at',{ascending:true})),
+   request(sb.from('honor_events').select('id,user_id,created_at').order('id',{ascending:false}).limit(50))
+  ]);
+  honors=entries||[];honorEvents=events||[];
+  const newest=honorEvents[0]?.id||0;
+  if(honorInitialized&&newest>honorLastEvent&&!isAdmin()){
+   const changes=honorEvents.filter(e=>e.id>honorLastEvent);
+   showHonorNotice(changes.some(e=>e.user_id===me.id));
+  }
+  honorLastEvent=Math.max(honorLastEvent,newest);honorInitialized=true;
+  if(view==='honors'&&!current)renderHonors();
+ }catch(e){console.warn('Albo d’oro:',e)}finally{honorBusy=false}
+}
+function showHonorNotice(winner){
+ $('#honorNoticeText').textContent=winner?'🏆 Congratulazioni per la vittoria del torneo!':'🏆 L’admin ha appena aggiornato l’Albo d’oro.';
+ $('#honorOverlay').classList.remove('hidden');
+ try{tone(false)}catch{}
+}
+$('#honorDismiss').onclick=()=>$('#honorOverlay').classList.add('hidden');
+$('#honorView').onclick=async()=>{$('#honorOverlay').classList.add('hidden');await releaseRoomSeat();current=null;view='honors';render()};
+function honorRows(){
+ const grouped=new Map();
+ for(const e of honors){if(!grouped.has(e.user_id))grouped.set(e.user_id,[]);grouped.get(e.user_id).push(e)}
+ return [...grouped].map(([id,awards])=>({id,awards})).sort((a,b)=>b.awards.length-a.awards.length||username(a.id).localeCompare(username(b.id),'it'));
+}
+function renderHonors(){
+ const c=$('#content');c.replaceChildren();const box=node('section','','panel'),head=node('div','','row between');
+ head.append(node('h2','🏆 Albo d’oro'));
+ if(isAdmin())head.append(button('＋ Aggiungi vittoria',()=>honorEditor()));
+ box.append(head);
+ const rows=honorRows();
+ if(!rows.length){box.append(node('p','Ancora nessuna competizione iniziata','notice'));c.append(box);return}
+ const list=node('div','','honor-list');
+ const highlighted=honorEvents[0]?.user_id;
+ rows.forEach((r,i)=>{
+  const line=node('div','','item'+(isAdmin()?' clickable':''));
+  const rank=node('span',i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1)+'°','honor-rank');
+  const details=node('div');details.style.flex='1';
+  const title=node('strong',username(r.id)+(r.id===highlighted?' ✨':''),r.id===highlighted?'honor-leader':'');
+  const counts=new Map();r.awards.forEach(a=>counts.set(a.trophy_name,(counts.get(a.trophy_name)||0)+1));
+  const wins=node('div','Vittorie: '+[...counts].map(([t,n])=>n+' '+t).join(' · '),'honor-wins');
+  if(r.id===highlighted)wins.classList.add('honor-leader');
+  details.append(title,wins);line.append(rank,details);
+  if(isAdmin()){line.append(node('span','✎ Modifica','muted'));line.onclick=()=>honorEditor(r.id)}
+  list.append(line);
+ });box.append(list);c.append(box)
+}
+function honorEditor(selectedId=null){
+ if(!isAdmin())return;
+ let userSelect,trophy,existing;
+ dialog(selectedId?'Aggiorna Albo d’oro':'Aggiungi vittoria',p=>{
+  p.append(node('div','Seleziona giocatore','tag'));
+  userSelect=node('select');
+  const eligible=profiles.filter(x=>x.role==='user'&&!x.archived);
+  eligible.forEach(u=>userSelect.append(new Option(u.username,u.id)));
+  if(selectedId)userSelect.value=selectedId;
+  p.append(userSelect);
+  p.append(node('div','Trofeo vinto','tag'));
+  trophy=input(p,'Es. Konami Cup');
+  existing=node('div');p.append(existing);
+  const draw=()=>{
+   existing.replaceChildren();
+   const awards=honors.filter(a=>a.user_id===userSelect.value);
+   if(!awards.length){existing.append(node('p','Nessuna vittoria registrata','muted'));return}
+   existing.append(node('h2','Vittorie già registrate'));
+   awards.forEach(a=>{
+    const line=node('div','','item'),name=node('span',a.trophy_name);
+    const edit=button('Rinomina',async()=>{
+     const newName=prompt('Nome del trofeo',a.trophy_name);
+     if(newName===null)return;
+     if(!newName.trim())return alert('Inserisci un nome valido');
+     try{await request(sb.rpc('pcr_edit_honor',{p_entry_id:a.id,p_trophy_name:newName.trim()}));await loadHonors();draw()}catch(e){fail(e)}
+    });
+    const del=button('Elimina',async()=>{
+     if(!confirm('Eliminare questa vittoria dall’Albo d’oro?'))return;
+     try{await request(sb.rpc('pcr_delete_honor',{p_entry_id:a.id}));await loadHonors();draw()}catch(e){fail(e)}
+    },'danger');
+    line.append(name,edit,del);existing.append(line)
+   })
+  };
+  userSelect.onchange=draw;draw();
+ },async()=>{
+  if(!userSelect.value)throw Error('Seleziona un utente');
+  if(!trophy.value.trim())throw Error('Inserisci il nome del trofeo');
+  await request(sb.rpc('pcr_add_honor',{p_user_id:userSelect.value,p_trophy_name:trophy.value.trim()}));
+  await loadHonors();
+ },'Aggiungi');
+}
 function renderUsers(){const c=$('#content');c.replaceChildren();const box=node('section','','panel'),head=node('div','','row between');add(head,node('h2','Utenti'),button('＋ Aggiungi utente',()=>userDialog()));box.append(head);profiles.filter(u=>u.role==='user').forEach(u=>{const row=node('div','','item clickable');row.append(node('div',u.username+' · '+(userEmails[u.id]||'Email non disponibile')+(u.archived?' · ARCHIVIATO':'')));row.onclick=()=>userDialog(u);const actions=node('div','','actions');add(actions,button(u.archived?'Riattiva':'Archivia',async()=>{try{await manage({action:u.archived?'restore':'archive',user_id:u.id});await refresh()}catch(e){fail(e)}}),button('Elimina',async()=>{if(confirm('Eliminare definitivamente questo account?'))try{await manage({action:'delete',user_id:u.id});await refresh()}catch(e){fail(e)}},'danger'));actions.onclick=e=>e.stopPropagation();row.append(actions);box.append(row)});c.append(box)}
 function userDialog(u){let name,email,pass,getRooms;dialog(u?'Modifica utente':'Aggiungi utente',p=>{
 name=input(p,'Username',u?.username||'');email=input(p,'Email',u?userEmails[u.id]||'':'','email');pass=input(p,u?'Nuova password (lascia vuoto per non modificarla)':'Password (minimo 10 caratteri)','', 'password');
