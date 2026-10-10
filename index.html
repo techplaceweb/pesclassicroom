@@ -71,6 +71,7 @@ button,.attach-label{touch-action:manipulation}textarea{resize:vertical}
 .msg.is-pinned{border-left:3px solid #ffc85a;background:#273344}.attachment-ready{background:#b51e2b!important;border:2px solid #ff8c91!important;color:white!important;box-shadow:0 0 14px #ff293b9c!important;font-weight:900;animation:attach-pulse 1.4s ease-in-out infinite}.attachment-cancel{background:#353d49!important;border-color:#a7b0bd!important}.attachment-notice{font-size:12px;color:#ffb8b8;overflow-wrap:anywhere;grid-column:1/-1}.attachment-file{color:#b9d7ff;text-decoration:underline;overflow-wrap:anywhere}
 @keyframes attach-pulse{50%{box-shadow:0 0 23px #ff293bcc}}
 @media(prefers-reduced-motion:reduce){.attachment-ready{animation:none}}
+ .chat-link{color:#8ed2ff;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}.chat-link:hover{color:#ffe39b}
 </style></head><body>
 <div id="login" class="login"><div class="loginbox"><div class="logo">PES <span style="color:white">CLASSIC</span> ROOM<div class="sub" style="font-size:13px">MASTER LEAGUE EDITION</div></div><form id="loginForm" class="panel stack"><input id="username" placeholder="Username" autocomplete="username" required><input id="password" type="password" placeholder="Password" autocomplete="current-password" required><button type="submit" class="gold">ACCEDI</button><div id="loginError" class="error"></div></form></div></div>
 <div id="maintenance" class="maintenance hidden">Il sito è temporaneamente inaccessibile</div>
@@ -140,6 +141,31 @@ function activateAudio(){try{const A=window.AudioContext||window.webkitAudioCont
 document.addEventListener('pointerdown',activateAudio,{passive:true});document.addEventListener('keydown',activateAudio);
 function emojiPicker(target){const wrap=node('span','','emoji-wrap');const trigger=button('😊',()=>{const existing=wrap.querySelector('.emoji-pop');if(existing){existing.remove();return}const pop=node('div','','emoji-pop');EMOJIS.forEach(em=>pop.append(button(em,()=>{const a=target.selectionStart,b=target.selectionEnd;target.setRangeText(em,a,b,'end');target.focus();pop.remove()})));wrap.append(pop)});trigger.title='Scegli emoji';wrap.append(trigger);return wrap}
 function attachPicker(onFile){const label=node('label','','attach-label'),inputEl=node('input');inputEl.type='file';inputEl.accept='image/jpeg,image/png,image/webp,image/gif,.pdf,.txt,.zip,.doc,.docx,.xls,.xlsx,.ppt,.pptx';label.title='Allega foto o file';label.setAttribute('aria-label','Allega foto o file');label.append(document.createTextNode('📎'),inputEl);inputEl.onchange=()=>{onFile(inputEl.files?.[0]||null);label.title=inputEl.files?.[0]?.name||'Allega foto o file'};return label}
+// Trasforma solo URL HTTP(S) completi in link sicuri, mantenendo il testo come testo.
+function linkedText(value){
+ const container=node('div');
+ const text=String(value??'');
+ const re=/https?:\/\/[^\s<>\"'`]+/gi;
+ let pos=0,match;
+ while((match=re.exec(text))!==null){
+  if(match.index>pos)container.append(document.createTextNode(text.slice(pos,match.index)));
+  const candidate=match[0];
+  const urlText=candidate.replace(/[.,!?;:]+$/,'').replace(/\)+$/,'');
+  const trailing=candidate.slice(urlText.length);
+  try{
+   const parsed=new URL(urlText);
+   if((parsed.protocol==='https:'||parsed.protocol==='http:')&&parsed.hostname){
+    const link=node('a',urlText);
+    link.href=parsed.href;link.target='_blank';link.rel='noopener noreferrer';
+    link.className='chat-link';container.append(link);
+   }else container.append(document.createTextNode(urlText));
+  }catch{container.append(document.createTextNode(urlText))}
+  if(trailing)container.append(document.createTextNode(trailing));
+  pos=re.lastIndex;
+ }
+ if(pos<text.length)container.append(document.createTextNode(text.slice(pos)));
+ return container;
+}
 const request=async(q)=>{const {data,error}=await q;if(error)throw error;return data};
 async function load(){profiles=await request(sb.from('profiles').select('id,username,role,archived,created_at'));rooms=await request(sb.from('rooms').select('*').order('created_at',{ascending:false}));access=await request(sb.from('room_access').select('*'));}
 async function enter(){const {data:{session}}=await sb.auth.getSession();if(!session){showLogin();return}me=session.user;const p=await request(sb.from('profiles').select('*').eq('id',me.id).single());profile=p;if(p.archived){await sb.auth.signOut();showLogin();return}const settings=await request(sb.from('settings').select('maintenance').single());if(settings.maintenance&&!isAdmin()){$('#login').classList.add('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden');return}$('#login').classList.add('hidden');$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.username+' · '+p.role.toUpperCase();$('#privateTitle').textContent=isAdmin()?'Contatta utenti':'Contatta ADMIN';document.querySelectorAll('.adminOnly').forEach(x=>x.classList.toggle('hidden',!isAdmin()));await load();await fetchUserEmails();subscribe();setupPresence();await loadPrivate();render();}
@@ -251,7 +277,7 @@ async function renderChat(silent=false){
   head.append(node('strong','📌 MESSAGGIO FISSATO'));
   if(isAdmin())head.append(button('Rimuovi pin',async()=>{try{await request(sb.from('rooms').update({pinned_message_id:null}).eq('id',r.id));const room=rooms.find(x=>x.id===r.id);if(room)room.pinned_message_id=null;await renderChat()}catch(e){fail(e)}}));
   pinBox.append(head);
-  pinBox.append(node('div',pinned?(username(pinned.author_id)+': '+(pinned.body|| (pinned.image_path?'📎 '+attachmentName(pinned.image_path):''))):'Messaggio fissato non presente negli ultimi 300 messaggi','pinned-content'));
+  const pinnedContent=linkedText(pinned?(username(pinned.author_id)+': '+(pinned.body|| (pinned.image_path?'📎 '+attachmentName(pinned.image_path):''))):'Messaggio fissato non presente negli ultimi 300 messaggi');pinnedContent.className='pinned-content';pinBox.append(pinnedContent);
   panel.append(pinBox);
  }
  items.forEach(m=>{
@@ -259,7 +285,7 @@ async function renderChat(silent=false){
   const name=node('strong',username(m.author_id)+'  ');name.style.color=userColor(m.author_id);
   add(line,name,node('small',fmt(m.created_at),'muted'));
   if(m.hidden)line.append(node('div','Segnalato — visibile solo ad ADMIN','tag'));
-  if(m.body)line.append(node('div',m.body));
+  if(m.body)line.append(linkedText(m.body));
   if(m.image_path)line.append(attachmentElement(m.image_path,history));
   if(isAdmin()){
    const a=node('div','','actions');
@@ -314,7 +340,7 @@ privateData=data;lastPrivate=new Set(data.map(m=>m.id));const badge=$('#unread')
 function tone(priv){try{if(!audioCtx)return;const ctx=audioCtx,osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.setValueAtTime(priv?820:540,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(priv?1040:670,ctx.currentTime+.11);gain.gain.setValueAtTime(.045,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.23);osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+.24);osc.onended=()=>{osc.disconnect();gain.disconnect()}}catch{}}
 $('#privateButton').onclick=()=>{privateOpen=!privateOpen;renderPrivate()};
 async function renderPrivate(){const p=$('#privatePanel');p.replaceChildren();p.classList.toggle('hidden',!privateOpen);if(!privateOpen)return;const h=node('div','','row between');h.append(node('h2',isAdmin()?'Contatta utenti':'Contatta ADMIN'),button('✕',()=>{privateOpen=false;renderPrivate()}));p.append(h);if(isAdmin()){const select=node('select');select.append(new Option('Seleziona utente',''));profiles.filter(x=>x.role==='user').forEach(x=>select.append(new Option(x.username,x.id)));select.value=peer||'';select.onchange=()=>{peer=select.value;renderPrivate()};p.append(select);if(!peer)return}else peer=profiles.find(x=>x.role==='admin')?.id;if(!peer){p.append(node('p','Admin non disponibile'));return}
-const history=node('div','','privatehistory');privateData.filter(m=>(m.sender_id===me.id&&m.receiver_id===peer)||(m.receiver_id===me.id&&m.sender_id===peer)).forEach(m=>{const line=node('div','','msg');line.append(node('strong',username(m.sender_id)),node('div',m.body),node('small',fmt(m.created_at),'muted'));if(isAdmin()&&m.sender_id===me.id){const ticks=node('span',m.read_at?'✓✓':'✓','tick');ticks.title=m.read_at?'Letto':'Inviato';line.append(ticks)}history.append(line)});p.append(history);const unread=privateData.filter(m=>m.sender_id===peer&&m.receiver_id===me.id&&!m.read_at);if(unread.length){await request(sb.from('private_messages').update({read_at:new Date().toISOString()}).in('id',unread.map(m=>m.id)));await loadPrivate()}
+const history=node('div','','privatehistory');privateData.filter(m=>(m.sender_id===me.id&&m.receiver_id===peer)||(m.receiver_id===me.id&&m.sender_id===peer)).forEach(m=>{const line=node('div','','msg');line.append(node('strong',username(m.sender_id)),linkedText(m.body),node('small',fmt(m.created_at),'muted'));if(isAdmin()&&m.sender_id===me.id){const ticks=node('span',m.read_at?'✓✓':'✓','tick');ticks.title=m.read_at?'Letto':'Inviato';line.append(ticks)}history.append(line)});p.append(history);const unread=privateData.filter(m=>m.sender_id===peer&&m.receiver_id===me.id&&!m.read_at);if(unread.length){await request(sb.from('private_messages').update({read_at:new Date().toISOString()}).in('id',unread.map(m=>m.id)));await loadPrivate()}
 const compose=node('div','','row'),ta=node('textarea');ta.placeholder='Scrivi..';ta.style.flex='1';const privateSend=button('Invia',async()=>{try{if(!ta.value.trim())return;await request(sb.from('private_messages').insert({sender_id:me.id,receiver_id:peer,body:ta.value.trim()}));await loadPrivate();renderPrivate()}catch(e){fail(e)}});ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();privateSend.click()}});compose.append(ta,emojiPicker(ta),privateSend);p.append(compose);history.scrollTop=history.scrollHeight}
 if(configured){sb.auth.onAuthStateChange((event)=>{if(event==='SIGNED_OUT'&&!closing)showLogin()});enter().catch(e=>{console.error('Sessione:',e);showLogin()})}else console.error('Configurazione Supabase mancante');
 </script></body></html>
