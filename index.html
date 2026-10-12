@@ -88,12 +88,50 @@ const $=s=>document.querySelector(s),node=(tag,text='',className='')=>{const x=d
 
 let activity=[],activityTimer=null,userSort='created',dashboardTicker=null,sessionLogged=false,publicMessageSignature='';
 let honors=[],honorEvents=[],honorLastEvent=0,honorInitialized=false,honorPoll=null,honorBusy=false;
+let roomDrafts=new Map(),privateDrafts=new Map(),roomMute=new Map(),roomNotices=new Map(),privateNotices=false,unreadRoom=new Map(),roomSeenAt=new Map(),lastTitleCount=0;
 let userEmails={},me=null,profile=null,rooms=[],profiles=[],access=[],current=null,view='rooms',channel=null,privateOpen=false,peer=null,mute=false,privateData=[],seen=new Set(),lastPublic=new Set(),lastPrivate=new Set(),ready=false,files=null,closing=false,presenceChannel=null,presence={},audioCtx=null;
 const isAdmin=()=>profile?.role==='admin';const username=id=>profiles.find(p=>p.id===id)?.username||'Utente';const canRoom=r=>isAdmin()||access.some(a=>a.room_id===r.id&&a.user_id===me.id);
 const EMOJIS='😀 😁 😂 🤣 😊 😎 😍 🥳 😘 😉 😜 🤔 😭 😢 😡 🤯 🤩 🙌 👏 👍 👎 💪 🤝 ❤️ 💚 💙 💜 🔥 ⭐ ⚽ 🥅 🏆 🥇 🎮 🎯 🚀 💯 🎉 🍕 ☕ 🌟 😴 😱 🤗 🙏 😇 🫶 👀 😈 🤖 💥 🎵 🏟️ 🇮🇹'.split(' ');
 const colorPalette=['#39a4ff','#4af67e','#bd72ff','#ffae39','#ffde42','#31e7de','#fa70c2','#a2ef47','#74a7ff','#efba64','#8dffbf','#c9a5ff'];
 function onlineIds(roomId){return [...new Set(Object.values(presence).flat().filter(x=>x.room===roomId).map(x=>x.user).filter(Boolean))].sort()}
-function userColor(id){if(profiles.find(p=>p.id===id)?.role==='admin')return '#ff5555';const ids=[...new Set(Object.values(presence).flat().map(x=>x.user).filter(x=>x&&profiles.find(p=>p.id===x)?.role!=='admin'))].sort();const n=ids.indexOf(id);if(n>=0)return (n<colorPalette.length?colorPalette[n]:`hsl(${(n*137+190)%360} 95% 65%)`);const i=profiles.filter(p=>p.role!=='admin').map(p=>p.id).sort().indexOf(id);return colorPalette[(i+colorPalette.length)%colorPalette.length]}
+function userColor(id){
+ if(profiles.find(p=>p.id===id)?.role==='admin')return '#ff5555';
+ // Deterministic, unique within the loaded user directory; independent of presence/order of connections.
+ const ids=profiles.filter(p=>p.role!=='admin').map(p=>p.id).sort();
+ const i=ids.indexOf(id);
+ if(i<0)return '#cbd5e1';
+ return `hsl(${(i*137.50776405+205)%360} 95% ${[69,77,62,72][i%4]}%)`;
+}
+function updateTabTitle(){
+ const privateUnread=privateData.filter(m=>m.receiver_id===me?.id&&!m.read_at).length;
+ const roomUnread=[...unreadRoom.values()].reduce((a,b)=>a+b,0);
+ const n=privateUnread+roomUnread;
+ document.title=n?`(${n}) ${n===1?'Messaggio non letto':'Messaggi non letti'} — PES Classic Room`:'PES Classic Room';
+}
+function notificationsSupported(){return 'Notification' in window && window.isSecureContext}
+async function toggleBrowserNotifications(kind,key){
+ const enabled=kind==='private'?privateNotices:!!roomNotices.get(key);
+ if(enabled){if(kind==='private')privateNotices=false;else roomNotices.set(key,false)}
+ else{
+  if(!notificationsSupported()){alert('Notifiche browser non disponibili. Usa HTTPS e un browser compatibile.');return}
+  if(Notification.permission!=='granted'){
+   const permission=await Notification.requestPermission();
+   if(permission!=='granted'){alert('Il browser non ha autorizzato le notifiche.');return}
+  }
+  if(kind==='private')privateNotices=true;else roomNotices.set(key,true);
+ }
+ try{localStorage.setItem('pcr-notices-'+me.id,JSON.stringify({private:privateNotices,rooms:Object.fromEntries(roomNotices)}))}catch{}
+ if(kind==='private')renderPrivate();else if(current?.id===key)renderChat(true);
+}
+function browserNotice(title,body,action){
+ if(!notificationsSupported()||Notification.permission!=='granted')return;
+ try{const n=new Notification(title,{body,tag:'pcr-'+Date.now()});n.onclick=()=>{window.focus();n.close();action?.()}}catch(e){console.warn('Notifica browser:',e)}
+}
+function saveDrafts(){
+ if(current){const t=document.querySelector('#roomComposer');if(t)roomDrafts.set(current.id,t.value)}
+ const p=document.querySelector('#privateComposer');if(p&&peer)privateDrafts.set(peer,p.value);
+}
+
 // Realtime Presence: sync immediata, aggiornamento locale e recupero connessione.
 let presenceTimer=null,presenceReconnect=null,presenceGeneration=0,presenceRoomSent=undefined,presenceSnapshot='';
 const presenceTabId=crypto.randomUUID();
@@ -144,7 +182,7 @@ window.addEventListener('pagehide',()=>{if(presenceChannel){presenceChannel.untr
 window.addEventListener('pageshow',e=>{if(e.persisted&&me)setupPresence()});
 function renderMemberList(el,room){el.replaceChildren(node('h2','Online nella stanza'));const ids=onlineIds(room.id);ids.forEach(id=>{const x=node('div','● '+username(id));x.style.color=userColor(id);el.append(x)});el.append(node('p',`Utenti online: ${ids.length}`,'muted'));if(!ids.length)el.append(node('p','In attesa della sincronizzazione delle presenze…','muted'))}
 // Accesso libero alle stanze: le presenze live non dipendono dai vecchi posti prenotati.
-function openRoom(r){current=r;lastPublic=new Set();publicMessageSignature='';render()}
+function openRoom(r){saveDrafts();current=r;lastPublic=new Set();publicMessageSignature='';unreadRoom.set(r.id,0);updateTabTitle();render()}
 function activateAudio(){try{const A=window.AudioContext||window.webkitAudioContext;if(!A)return;if(!audioCtx)audioCtx=new A();if(audioCtx.state==='suspended')audioCtx.resume().catch(()=>{})}catch(e){console.warn('Audio:',e)}}
 document.addEventListener('pointerdown',activateAudio,{passive:true});document.addEventListener('keydown',activateAudio);
 function emojiPicker(target){const wrap=node('span','','emoji-wrap');const trigger=button('😊',()=>{const existing=wrap.querySelector('.emoji-pop');if(existing){existing.remove();return}const pop=node('div','','emoji-pop');EMOJIS.forEach(em=>pop.append(button(em,()=>{const a=target.selectionStart,b=target.selectionEnd;target.setRangeText(em,a,b,'end');target.focus();pop.remove()})));wrap.append(pop)});trigger.title='Scegli emoji';wrap.append(trigger);return wrap}
@@ -176,7 +214,7 @@ function linkedText(value){
 }
 const request=async(q)=>{const {data,error}=await q;if(error)throw error;return data};
 async function load(){profiles=await request(sb.from('profiles').select('id,username,role,archived,created_at,all_rooms,updated_at'));rooms=await request(sb.from('rooms').select('*').order('created_at',{ascending:false}));access=await request(sb.from('room_access').select('*'));}
-async function enter(){const {data:{session}}=await sb.auth.getSession();if(!session){showLogin();return}me=session.user;const p=await request(sb.from('profiles').select('*').eq('id',me.id).single());profile=p;if(p.archived){await sb.auth.signOut();showLogin();return}const settings=await request(sb.from('settings').select('maintenance').single());if(settings.maintenance&&!isAdmin()){$('#login').classList.add('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden');return}$('#login').classList.add('hidden');$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.username+' · '+p.role.toUpperCase();$('#privateTitle').textContent=isAdmin()?'Contatta utenti':'Contatta ADMIN';document.querySelectorAll('.adminOnly').forEach(x=>x.classList.toggle('hidden',!isAdmin()));await load();view=isAdmin()?'dashboard':'rooms';current=null;await loadHonors(true);await fetchUserEmails();subscribe();setupPresence();if(isAdmin())await loadActivity();startActivityRefresh();await loadPrivate();render();}
+async function enter(){const {data:{session}}=await sb.auth.getSession();if(!session){showLogin();return}me=session.user;const p=await request(sb.from('profiles').select('*').eq('id',me.id).single());profile=p;if(p.archived){await sb.auth.signOut();showLogin();return}const settings=await request(sb.from('settings').select('maintenance').single());if(settings.maintenance&&!isAdmin()){$('#login').classList.add('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden');return}$('#login').classList.add('hidden');$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden');$('#who').textContent=p.username+' · '+p.role.toUpperCase();$('#privateTitle').textContent=isAdmin()?'Contatta utenti':'Contatta ADMIN';document.querySelectorAll('.adminOnly').forEach(x=>x.classList.toggle('hidden',!isAdmin()));await load();view=isAdmin()?'dashboard':'rooms';current=null;await loadHonors(true);await fetchUserEmails();subscribe();setupPresence();if(isAdmin())await loadActivity();startActivityRefresh();await loadPrivate();try{const pref=JSON.parse(localStorage.getItem('pcr-notices-'+me.id)||'{}');privateNotices=!!pref.private;roomNotices=new Map(Object.entries(pref.rooms||{}))}catch{}render();}
 function showLogin(){$('#login').classList.remove('hidden');$('#app').classList.add('hidden');$('#maintenance').classList.add('hidden');me=null;profile=null;if(channel){sb.removeChannel(channel);channel=null}if(presenceReconnect){clearTimeout(presenceReconnect);presenceReconnect=null}if(presenceTimer){clearInterval(presenceTimer);presenceTimer=null}presenceGeneration++;if(presenceChannel){sb.removeChannel(presenceChannel);presenceChannel=null}presence={};presenceSnapshot='';presenceRoomSent=undefined;honorInitialized=false;honorLastEvent=0;honors=[];honorEvents=[];if(honorPoll){clearInterval(honorPoll);honorPoll=null}if(activityTimer){clearInterval(activityTimer);activityTimer=null}if(dashboardTicker){clearInterval(dashboardTicker);dashboardTicker=null}sessionLogged=false;$('#honorOverlay').classList.add('hidden')}
 $('#loginForm').onsubmit=async e=>{
   e.preventDefault();
@@ -205,15 +243,15 @@ $('#loginForm').onsubmit=async e=>{
   finally{submit.disabled=false}
 };
 $('#logout').onclick=async()=>{closing=true;await sb.auth.signOut();showLogin();closing=false};
-function subscribe(){if(channel)sb.removeChannel(channel);channel=sb.channel('pcr-live-'+me.id).on('postgres_changes',{event:'*',schema:'public',table:'rooms'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'room_access'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'settings'},async()=>{const x=await request(sb.from('settings').select('*').single());if(x.maintenance&&!isAdmin()){$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden')}else{$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden')}}).on('postgres_changes',{event:'*',schema:'public',table:'messages'},async()=>{if(current)await renderChat(true)}).on('postgres_changes',{event:'INSERT',schema:'public',table:'honor_events'},()=>loadHonors()).on('postgres_changes',{event:'*',schema:'public',table:'honor_entries'},()=>loadHonors()).on('postgres_changes',{event:'*',schema:'public',table:'private_messages'},async()=>{await loadPrivate(true);if(privateOpen)renderPrivate()}).subscribe();if(honorPoll)clearInterval(honorPoll);honorPoll=setInterval(()=>{if(me&&document.visibilityState==='visible')loadHonors()},12000)}
+function subscribe(){if(channel)sb.removeChannel(channel);channel=sb.channel('pcr-live-'+me.id).on('postgres_changes',{event:'*',schema:'public',table:'rooms'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'room_access'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'profiles'},refresh).on('postgres_changes',{event:'*',schema:'public',table:'settings'},async()=>{const x=await request(sb.from('settings').select('*').single());if(x.maintenance&&!isAdmin()){$('#app').classList.add('hidden');$('#maintenance').classList.remove('hidden')}else{$('#maintenance').classList.add('hidden');$('#app').classList.remove('hidden')}}).on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},async(payload)=>{if(current?.id===payload.new?.room_id)await renderChat(true);else if(payload.new?.author_id!==me.id){const rid=payload.new?.room_id;if(rid&&rooms.some(r=>r.id===rid&&canRoom(r))){unreadRoom.set(rid,(unreadRoom.get(rid)||0)+1);updateTabTitle();if(!roomMute.get(rid))tone(false);if(roomNotices.get(rid))browserNotice('Messaggio nella room',rooms.find(r=>r.id===rid)?.name||'Chat Room',()=>openRoom(rooms.find(r=>r.id===rid)))}}}).on('postgres_changes',{event:'UPDATE',schema:'public',table:'messages'},async()=>{if(current)await renderChat(true)}).on('postgres_changes',{event:'DELETE',schema:'public',table:'messages'},async()=>{if(current)await renderChat(true)}).on('postgres_changes',{event:'INSERT',schema:'public',table:'honor_events'},()=>loadHonors()).on('postgres_changes',{event:'*',schema:'public',table:'honor_entries'},()=>loadHonors()).on('postgres_changes',{event:'*',schema:'public',table:'private_messages'},async()=>{await loadPrivate(true);if(privateOpen)renderPrivate()}).subscribe();if(honorPoll)clearInterval(honorPoll);honorPoll=setInterval(()=>{if(me&&document.visibilityState==='visible')loadHonors()},12000)}
 async function refresh(){try{await load();if(view==='users'&&isAdmin()){await fetchUserEmails();await loadActivity()}if(current&&!rooms.some(r=>r.id===current.id&&canRoom(r)&&(!r.closed||isAdmin()))){current=null}else if(current)current=rooms.find(r=>r.id===current.id);render()}catch(e){console.error(e)}}
-function render(){updatePresence();document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('#heading').textContent=current?.name||(view==='dashboard'?'Dashboard':view==='rooms'?'Chat Rooms':view==='users'?'Utenti':view==='honors'?'Albo d’oro':'Impostazioni');if(current)renderChat();else if(view==='dashboard')renderDashboard();else if(view==='rooms')renderRooms();else if(view==='users')renderUsers();else if(view==='honors')renderHonors();else renderSettings()}
+function render(){saveDrafts();updatePresence();document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('#heading').textContent=current?.name||(view==='dashboard'?'Dashboard':view==='rooms'?'Chat Rooms':view==='users'?'Utenti':view==='honors'?'Albo d’oro':'Impostazioni');if(current)renderChat();else if(view==='dashboard')renderDashboard();else if(view==='rooms')renderRooms();else if(view==='users')renderUsers();else if(view==='honors')renderHonors();else renderSettings()}
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{if(!isAdmin()&&!['rooms','honors'].includes(b.dataset.view))return;view=b.dataset.view;current=null;render()});
 function dialog(title,setup,submit,label='Salva'){const body=$('#dialogBody');body.replaceChildren();$('#dialogTitle').textContent=title;setup(body);$('#dialogSave').textContent=label;$('#dialogSave').onclick=async()=>{try{await submit();$('#overlay').classList.add('hidden');await refresh()}catch(e){fail(e)}};$('#overlay').classList.remove('hidden')}
 $('#closeDialog').onclick=()=>$('#overlay').classList.add('hidden');
 function input(p,label,value='',type='text'){const x=node('input');x.placeholder=label;x.setAttribute('aria-label',label);x.type=type;x.value=value;p.append(x);return x}
 function renderRooms(){const c=$('#content');c.replaceChildren();const box=node('section','','panel'),head=node('div','','row between');add(head,node('h2','Stanze disponibili'));if(isAdmin())head.append(button('＋ Crea room',()=>roomDialog()));box.append(head);const visible=rooms.filter(r=>isAdmin()||(!r.closed&&canRoom(r)));if(!visible.length)box.append(node('p','Nessuna stanza disponibile.','notice'));
- visible.forEach(r=>{const row=node('div','','item clickable'),info=node('div');const details=node('div',`Utenti online: ${onlineIds(r.id).length}`+(r.closed?' · CHIUSA':'')+(r.archived?' · CRONOLOGIA ARCHIVIATA':''),'muted');add(info,node('strong',r.name),details);row.append(info);row.onclick=()=>{if(isAdmin())roomDialog(r);else openRoom(r)};if(isAdmin()){row.ondblclick=e=>{e.preventDefault();changeRoom(r,{closed:!r.closed})};const actions=node('div','','actions');add(actions,button('Entra',()=>openRoom(r)),button(r.closed?'Riattiva':'Chiudi',()=>changeRoom(r,{closed:!r.closed})),button(r.archived?'Ripristina':'Archivia conversazioni',()=>changeRoom(r,{archived:!r.archived,archived_at:r.archived?null:new Date().toISOString()})),button('Elimina',async()=>{if(confirm('Eliminare definitivamente la stanza e tutti i messaggi?'))try{await request(sb.from('rooms').delete().eq('id',r.id));await refresh()}catch(e){fail(e)}},'danger'));actions.onclick=e=>e.stopPropagation();row.append(actions)}box.append(row)});c.append(box)}
+ visible.forEach(r=>{const row=node('div','','item clickable'),info=node('div');const details=node('div',`Utenti online: ${onlineIds(r.id).length}`+(r.closed?' · CHIUSA':'')+(r.archived?' · CRONOLOGIA ARCHIVIATA':'')+(unreadRoom.get(r.id)?' · 🔴 '+unreadRoom.get(r.id)+' non letti':''),'muted');add(info,node('strong',r.name),details);row.append(info);row.onclick=()=>{if(isAdmin())roomDialog(r);else openRoom(r)};if(isAdmin()){row.ondblclick=e=>{e.preventDefault();changeRoom(r,{closed:!r.closed})};const actions=node('div','','actions');add(actions,button('Entra',()=>openRoom(r)),button(r.closed?'Riattiva':'Chiudi',()=>changeRoom(r,{closed:!r.closed})),button(r.archived?'Ripristina':'Archivia conversazioni',()=>changeRoom(r,{archived:!r.archived,archived_at:r.archived?null:new Date().toISOString()})),button('Elimina',async()=>{if(confirm('Eliminare definitivamente la stanza e tutti i messaggi?'))try{await request(sb.from('rooms').delete().eq('id',r.id));await refresh()}catch(e){fail(e)}},'danger'));actions.onclick=e=>e.stopPropagation();row.append(actions)}box.append(row)});c.append(box)}
 async function changeRoom(r,data){try{await request(sb.from('rooms').update(data).eq('id',r.id));await refresh()}catch(e){fail(e)}}
 function roomDialog(r){let name;dialog(r?'Modifica stanza':'Crea room',p=>{name=input(p,'Nome stanza',r?.name||'')},async()=>{if(!name.value.trim())throw Error('Inserisci il nome');const data={name:name.value.trim()};if(r)await request(sb.from('rooms').update(data).eq('id',r.id));else await request(sb.from('rooms').insert(data))},r?'Salva':'Apri')}
 function roomSelector(p,selected=[],allDefault=false){const wrap=node('div');const all=node('label','');const allCheck=node('input');allCheck.type='checkbox';allCheck.style.width='auto';allCheck.checked=allDefault;all.append(allCheck,document.createTextNode(' Tutte le stanze'));wrap.append(all);const boxes=[];rooms.forEach(r=>{const label=node('label');const cb=node('input');cb.type='checkbox';cb.style.width='auto';cb.value=r.id;cb.checked=selected.includes(r.id);boxes.push(cb);label.append(cb,document.createTextNode(' '+r.name));wrap.append(label)});allCheck.onchange=()=>boxes.forEach(b=>b.checked=allCheck.checked);boxes.forEach(b=>b.onchange=()=>{if(!b.checked)allCheck.checked=false;else if(boxes.every(x=>x.checked))allCheck.checked=true});p.append(wrap);return()=>({room_ids:boxes.filter(x=>x.checked).map(x=>x.value),all_rooms:allCheck.checked})}
@@ -363,7 +401,7 @@ function attachmentElement(path,history){
  return el;
 }
 async function renderChat(silent=false){
- const r=current;if(!r)return;
+ saveDrafts();const r=current;if(!r)return;
  const c=$('#content');
  let items;
  try{items=await request(sb.from('messages').select('*').eq('room_id',r.id).order('created_at',{ascending:true}).limit(300))}
@@ -373,7 +411,7 @@ async function renderChat(silent=false){
  const pinned=items.find(m=>m.id===freshRoom.pinned_message_id);
  if(silent){
   const newer=items.filter(m=>!lastPublic.has(m.id)&&m.author_id!==me.id);
-  if(ready&&newer.length&&!mute)tone(false);
+  if(ready&&newer.length){if(!mute&&!roomMute.get(r.id))tone(false);if(roomNotices.get(r.id))browserNotice('Nuovi messaggi — '+r.name,newer.length+' nuovi messaggi',()=>openRoom(r));}
   if(!newer.length&&c.querySelector('.messages')&&items.every(m=>lastPublic.has(m.id))&&publicMessageSignature===JSON.stringify(items.map(m=>[m.id,m.body,m.hidden,m.image_path]))){scrollChatToLatest(c.querySelector('.messages'));return}
  }
  lastPublic=new Set(items.map(m=>m.id));publicMessageSignature=JSON.stringify(items.map(m=>[m.id,m.body,m.hidden,m.image_path]));
@@ -389,7 +427,7 @@ async function renderChat(silent=false){
   panel.append(pinBox);
  }
  items.forEach(m=>{
-  const line=node('div','','msg'+(m.id===freshRoom.pinned_message_id?' is-pinned':''));
+  const line=node('div','','msg'+(m.id===freshRoom.pinned_message_id?' is-pinned':''));line.id='room-message-'+m.id;
   const name=node('strong',username(m.author_id)+'  ');name.style.color=userColor(m.author_id);
   add(line,name,node('small',fmt(m.created_at),'muted'));
   if(m.hidden)line.append(node('div','Segnalato — visibile solo ad ADMIN','tag'));
@@ -409,8 +447,8 @@ async function renderChat(silent=false){
   history.append(line);
  });
  panel.append(history);
- const label=node('label'),cb=node('input');cb.type='checkbox';cb.style.width='auto';cb.checked=mute;cb.onchange=()=>mute=cb.checked;label.append(cb,document.createTextNode(' Silenzia Chat (non silenzia i privati)'));panel.append(label);
- const compose=node('div','','composer'),ta=node('textarea');ta.placeholder='Scrivi..';
+ const label=node('label'),cb=node('input');cb.type='checkbox';cb.style.width='auto';cb.checked=!!roomMute.get(r.id);cb.onchange=()=>{roomMute.set(r.id,cb.checked);mute=cb.checked};label.append(cb,document.createTextNode(' Silenzia Chat (non silenzia i privati)'));panel.append(label,button(roomNotices.get(r.id)?'Disattiva notifiche':'Attiva notifiche',()=>toggleBrowserNotifications('room',r.id)));
+ const compose=node('div','','composer'),ta=node('textarea');ta.id='roomComposer';ta.placeholder='Scrivi..';ta.value=roomDrafts.get(r.id)||'';ta.oninput=()=>roomDrafts.set(r.id,ta.value);
  const emoji=emojiPicker(ta),send=button('Invia',async()=>{
   if(send.disabled)return;
   send.disabled=true;
@@ -425,8 +463,8 @@ async function renderChat(silent=false){
     await request(sb.storage.from('room-images').upload(path,picked,{contentType:picked.type}));
    }
    if(!ta.value.trim()&&!path)return;
-   await request(sb.from('messages').insert({room_id:r.id,author_id:me.id,body:ta.value,image_path:path}));
-   files=null;await renderChat();
+   const sentText=ta.value;await request(sb.from('messages').insert({room_id:r.id,author_id:me.id,body:sentText,image_path:path}));
+   if(roomDrafts.get(r.id)===sentText)roomDrafts.set(r.id,'');files=null;await renderChat();
   }catch(e){fail(e)}finally{send.disabled=false}
  });
  const cancel=button('Annulla invio',()=>{files=null;picker.querySelector('input').value='';updateAttach()},'attachment-cancel');
@@ -443,12 +481,12 @@ async function renderChat(silent=false){
  const members=node('aside','','members');members.id='onlineMembers';renderMemberList(members,r);
  grid.append(panel,members);c.append(grid);scrollChatToLatest(history);
 }
-async function loadPrivate(notify=false){if(!me)return;const data=await request(sb.from('private_messages').select('*').order('created_at',{ascending:true}).limit(500));const incoming=data.filter(m=>m.receiver_id===me.id&&!m.read_at);const fresh=incoming.filter(m=>!lastPrivate.has(m.id));if(notify&&ready&&fresh.length){tone(true);document.title=`(${incoming.length}) Hai ricevuto un messaggio — PES Classic Room`;}
-privateData=data;lastPrivate=new Set(data.map(m=>m.id));const badge=$('#unread');badge.textContent=incoming.length;badge.classList.toggle('hidden',!incoming.length);if(!incoming.length)document.title='PES Classic Room';ready=true}
+async function loadPrivate(notify=false){if(!me)return;const data=await request(sb.from('private_messages').select('*').order('created_at',{ascending:true}).limit(500));const incoming=data.filter(m=>m.receiver_id===me.id&&!m.read_at);const fresh=incoming.filter(m=>!lastPrivate.has(m.id));if(notify&&ready&&fresh.length){tone(true);if(privateNotices)browserNotice('Nuovo messaggio privato',fresh.map(m=>username(m.sender_id)).join(', '),()=>{peer=fresh[0].sender_id;privateOpen=true;renderPrivate()});}
+privateData=data;lastPrivate=new Set(data.map(m=>m.id));const badge=$('#unread');badge.textContent=incoming.length;badge.classList.toggle('hidden',!incoming.length);updateTabTitle();ready=true}
 function tone(priv){try{if(!audioCtx)return;const ctx=audioCtx,osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.setValueAtTime(priv?820:540,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(priv?1040:670,ctx.currentTime+.11);gain.gain.setValueAtTime(.045,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.23);osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+.24);osc.onended=()=>{osc.disconnect();gain.disconnect()}}catch{}}
-$('#privateButton').onclick=()=>{privateOpen=!privateOpen;renderPrivate()};
-async function renderPrivate(){const p=$('#privatePanel');p.replaceChildren();p.classList.toggle('hidden',!privateOpen);if(!privateOpen)return;const h=node('div','','row between');h.append(node('h2',isAdmin()?'Contatta utenti':'Contatta ADMIN'),button('✕',()=>{privateOpen=false;renderPrivate()}));p.append(h);if(isAdmin()){const select=node('select');select.append(new Option('Seleziona utente',''));profiles.filter(x=>x.role==='user').forEach(x=>select.append(new Option(x.username,x.id)));select.value=peer||'';select.onchange=()=>{peer=select.value;renderPrivate()};p.append(select);if(!peer)return}else peer=profiles.find(x=>x.role==='admin')?.id;if(!peer){p.append(node('p','Admin non disponibile'));return}
+$('#privateButton').onclick=()=>{if(!privateOpen&&isAdmin()){const pending=privateData.filter(m=>m.receiver_id===me.id&&!m.read_at);if(pending.length)peer=pending[0].sender_id}privateOpen=!privateOpen;renderPrivate()};
+async function renderPrivate(){saveDrafts();const p=$('#privatePanel');p.replaceChildren();p.classList.toggle('hidden',!privateOpen);if(!privateOpen)return;const h=node('div','','row between');h.append(node('h2',isAdmin()?'Contatta utenti':'Contatta ADMIN'),button('✕',()=>{privateOpen=false;renderPrivate()}));p.append(h,button(privateNotices?'Disattiva notifiche':'Attiva notifiche',()=>toggleBrowserNotifications('private')));if(isAdmin()){const select=node('select');select.append(new Option('Seleziona utente',''));profiles.filter(x=>x.role==='user').forEach(x=>{const n=privateData.filter(m=>m.sender_id===x.id&&m.receiver_id===me.id&&!m.read_at).length;select.append(new Option((n?'🔴 ['+n+' non letti] ':'')+x.username,x.id))});select.value=peer||'';select.onchange=()=>{peer=select.value;renderPrivate()};p.append(select);if(!peer)return}else peer=profiles.find(x=>x.role==='admin')?.id;if(!peer){p.append(node('p','Admin non disponibile'));return}
 const history=node('div','','privatehistory');privateData.filter(m=>(m.sender_id===me.id&&m.receiver_id===peer)||(m.receiver_id===me.id&&m.sender_id===peer)).forEach(m=>{const line=node('div','','msg');line.append(node('strong',username(m.sender_id)),linkedText(m.body),node('small',fmt(m.created_at),'muted'));if(isAdmin()&&m.sender_id===me.id){const ticks=node('span',m.read_at?'✓✓':'✓','tick');ticks.title=m.read_at?'Letto':'Inviato';line.append(ticks)}history.append(line)});p.append(history);const unread=privateData.filter(m=>m.sender_id===peer&&m.receiver_id===me.id&&!m.read_at);if(unread.length){await request(sb.from('private_messages').update({read_at:new Date().toISOString()}).in('id',unread.map(m=>m.id)));await loadPrivate()}
-const compose=node('div','','row'),ta=node('textarea');ta.placeholder='Scrivi..';ta.style.flex='1';const privateSend=button('Invia',async()=>{try{if(!ta.value.trim())return;await request(sb.from('private_messages').insert({sender_id:me.id,receiver_id:peer,body:ta.value.trim()}));await loadPrivate();renderPrivate()}catch(e){fail(e)}});ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();privateSend.click()}});compose.append(ta,emojiPicker(ta),privateSend);p.append(compose);history.scrollTop=history.scrollHeight}
+const compose=node('div','','row'),ta=node('textarea');ta.id='privateComposer';ta.placeholder='Scrivi..';ta.value=privateDrafts.get(peer)||'';ta.oninput=()=>privateDrafts.set(peer,ta.value);ta.style.flex='1';const privateSend=button('Invia',async()=>{try{if(!ta.value.trim())return;const sent=ta.value.trim(),target=peer;await request(sb.from('private_messages').insert({sender_id:me.id,receiver_id:target,body:sent}));if(privateDrafts.get(target)?.trim()===sent)privateDrafts.set(target,'');await loadPrivate();renderPrivate()}catch(e){fail(e)}});ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();privateSend.click()}});compose.append(ta,emojiPicker(ta),privateSend);p.append(compose);history.scrollTop=history.scrollHeight}
 if(configured){sb.auth.onAuthStateChange((event)=>{if(event==='SIGNED_OUT'&&!closing)showLogin()});enter().catch(e=>{console.error('Sessione:',e);showLogin()})}else console.error('Configurazione Supabase mancante');
 </script></body></html>
